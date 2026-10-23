@@ -1,0 +1,104 @@
+name: Build YAS BinaryLab X Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/windows-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-msvc:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Qt 6 MSVC 2022 (x64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          cache: true
+          setup-python: true
+
+      - name: Static source checks
+        run: |
+          python tests/source_smoke.py
+          python tests/v23_source_checks.py
+          python tests/v24_source_checks.py
+          python tests/v26_source_checks.py
+          python tests/v27_source_checks.py
+          python tests/v28_source_checks.py
+          python tests/v29_source_checks.py
+          python tests/v30_source_checks.py
+          python tests/v31_source_checks.py
+          python tests/v32_source_checks.py
+          python tests/v33_source_checks.py
+          python tests/v34_source_checks.py
+          python tests/v35_source_checks.py
+          python tests/v36_source_checks.py
+          python tests/v37_source_checks.py
+          python tests/v38_source_checks.py
+          python tests/v39_source_checks.py
+          python tests/v40_architecture_checks.py
+          python tests/v40_architecture_checks.py
+
+      - name: Configure CMake with Visual Studio 2022
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" -DBUILD_TESTING=ON -DYAS_ENABLE_DEBUGGER_INTEGRATION=ON
+
+      - name: Build Release
+        run: |
+          New-Item -ItemType Directory -Force -Path diagnostics | Out-Null
+          & cmake --build build --config Release --parallel 4 -- /v:normal 2>&1 | Tee-Object -FilePath diagnostics/msvc-build.log
+          if ($LASTEXITCODE -ne 0) { throw "MSVC build failed. Download msvc-build.log from the diagnostics artifact." }
+
+      - name: Run C++ tests
+        run: |
+          & ctest --test-dir build --build-config Release --output-on-failure 2>&1 | Tee-Object -FilePath diagnostics/ctest.log
+          if ($LASTEXITCODE -ne 0) { throw "One or more C++ tests failed; see diagnostics/ctest.log." }
+
+      - name: Package portable application
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $exe = Join-Path $PWD 'build/Release/YASBinaryLabX.exe'
+          if (-not (Test-Path $exe)) { throw "EXE missing: $exe" }
+          Copy-Item $exe -Destination dist/
+          $deploy = Join-Path $env:QT_ROOT_DIR 'bin/windeployqt.exe'
+          if (-not (Test-Path $deploy)) { throw "windeployqt missing: $deploy" }
+          & $deploy --release --no-translations --compiler-runtime (Join-Path $PWD 'dist/YASBinaryLabX.exe')
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt failed: $LASTEXITCODE" }
+          Compress-Archive -Path dist/* -DestinationPath YAS_BinaryLab_X_Windows_x64.zip -Force
+
+      - name: Upload executable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: YAS-BinaryLab-X-Windows-x64
+          path: YAS_BinaryLab_X_Windows_x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmake-build-diagnostics
+          path: |
+            diagnostics/*.log
+            build/CMakeCache.txt
+            build/CMakeFiles/CMakeConfigureLog.yaml
+            build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
