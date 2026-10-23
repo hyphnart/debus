@@ -490,6 +490,11 @@ void WindowsDebugSession::run(QString path){
         } else if(event.dwDebugEventCode==EXCEPTION_DEBUG_EVENT) {
             const DWORD exception=event.u.Exception.ExceptionRecord.ExceptionCode;
             const bool first=event.u.Exception.dwFirstChance!=0;
+            // Used by both the EXCEPTION_SINGLE_STEP branch and the shared
+            // paused-state snapshot logic below. Must outlive the branch.
+            const bool traceStep=(exception==EXCEPTION_SINGLE_STEP &&
+                traceRemaining>0 && traceThread==tid &&
+                !(rearmAddress!=0 && rearmThread==tid));
             if(exception==EXCEPTION_BREAKPOINT) {
                 if(readContext(tid,ctx,thread)) {
                     const quint64 ip=ctx.Rip;
@@ -582,7 +587,6 @@ void WindowsDebugSession::run(QString path){
                 }
             } else if(exception==EXCEPTION_SINGLE_STEP) {
                 const bool maintenanceStep=(rearmAddress!=0 && rearmThread==tid);
-                const bool traceStep=(traceRemaining>0 && traceThread==tid && !maintenanceStep);
                 if(readContext(tid,ctx,thread)) {
                     if(rearmAddress && rearmThread==tid) {
                         auto it=breakpoints.find(rearmAddress);
