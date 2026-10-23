@@ -1,0 +1,1 @@
+FlowGraphView.cpp satir 54: Qt6 QVector::size() qsizetype, std::max(1,...) int ile cakistigi icin MSVC C2672. blockCount int degiskenine acik donusum yapildi. C2737 bu hatanin zincirleme sonucuydu. GitHub Actions tekrar derleme gerekir; burada Qt6 SDK olmadigi icin derleme dogrulanmadi.
